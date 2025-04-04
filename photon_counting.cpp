@@ -19,12 +19,14 @@ MatrixXcd comm (const MatrixXcd &A, const MatrixXcd &B) {return A*B-B*A;}
 MatrixXcd anticomm (const MatrixXcd &A, const MatrixXcd &B) {return A*B+B*A;}
 MatrixXcd projector (const VectorXcd &psi) {return psi*psi.adjoint();}
 
-// Parameters
+// Run it with all 3 labels to have all data for plots
 //string label = "0"; // xi = 0
 //string label = "+"; // xi = .1
 string label = "-"; // xi = -1
-int dim_max = 10, Nensemble = 10000;
-double gamma = 1., Omega = 1., phi = .2, nbar = .5, dt = .0005, tmax = 2.;
+
+// Parameters
+int dim_max = 10, Nensemble = 1000;
+double gamma = 1., Omega = 1., phi = .2, nbar = .5, dt = .001, tmax = 2.;
 // Possible values of xi
 double xi_0 = 0., xi_p = 0.01, xi_m = -1.;
 
@@ -108,8 +110,12 @@ int main () {
         destroyed.push_back(false);
     }
 
+    int index_time = 0;
     for (double t = 0.; t < tmax; t += dt) {
-        cout << t << ", " << psi.size() << endl;
+        if (index_time % 100 == 0)
+            cout << t << ", " << psi.size() << endl;
+        index_time++;
+
         MatrixXcd K = H -.5*I*Gamma(t), rho_avg = MatrixXcd::Zero(dim_max, dim_max);
         int Nt = 0;
 
