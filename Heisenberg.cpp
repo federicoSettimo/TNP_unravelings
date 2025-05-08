@@ -25,7 +25,7 @@ static Eigen::Vector2cd minus_state {{0.,1.}};
 
 // Parameters
 double dt = .005, tmax = 2., threshold_neg = 1e-1;
-int Nensemble = 10000, Ntraj = 6;
+int Nensemble = 10000, Ntraj = 7;
 
 Matrix2cd comm (const Matrix2cd &A, const Matrix2cd &B) {return A*B-B*A;}
 Matrix2cd anticomm (const Matrix2cd &A, const Matrix2cd &B) {return A*B+B*A;}
@@ -79,10 +79,16 @@ Vector2cd jump (const Matrix2cd &R, double z) {
         cerr << "Error: negative eigenvalue" << endl;
         cerr << "\tEigenvalues: " << real(eigval[0]) << " " << real(eigval[1]) << endl;
     }
-    if (z < real(eigval[0])*dt)
-        return eigvec.col(0);
-    else 
-        return eigvec.col(1);
+    if (z < real(eigval[0])*dt) {
+        if (real(eigvec.col(0)(0)) > .5)
+            return plus_state;
+        else return minus_state;
+    }
+    else {
+        if (real(eigvec.col(1)(0)) > .5)
+            return plus_state;
+        else return minus_state;
+    }
 }
 
 int main () {
@@ -95,16 +101,17 @@ int main () {
     out_tmax << tmax << endl << Ntraj;
 
     vector<Vector2cd> psi;
-    vector<bool> destroyed;
+    vector<bool> destroyed, jumped;
     for (int i = 0; i < Nensemble; ++i) {
         psi.push_back(psi0);
         destroyed.push_back(false);
+        jumped.push_back(false);
     }
 
     for (double t = 0.; t < tmax; t += dt) {
         Matrix2cd K0 = -H(t) -.5*I*Gamma(t), rho_avg = Matrix2cd::Zero();
         int Nt = 0;
-        double gp = gamma_p(t), gm = gamma_m(t), ee = eps(t);
+        double gp = gamma_p(t), gm = gamma_m(t);
 
         cout << t << ", " << psi.size() << endl;
 
@@ -125,9 +132,9 @@ int main () {
                 Nt++;
 
                 Vector2cd Phi;
-                if (abs(psi[i][0]) > .99) // |+>
+                if (abs(psi[i][0]) > .99 && jumped[i]) // |+>
                     Phi = (2.*gp - 2.*gm)*minus_state - (gm + gp)*plus_state;
-                else if (abs(psi[i][1]) > .99) // |->
+                else if (abs(psi[i][1]) > .99 && jumped[i]) // |->
                     Phi = (2.*gp - 2.*gm)*plus_state - (gm + gp)*minus_state;
                 else {
                     double theta = arg(psi[i][1]), a = abs(psi[i][1]), sq = sqrt(1. - a*a),
@@ -151,17 +158,20 @@ int main () {
                     p_c = max(0, -real(((Gamma(t) - Gamma_L(t))*projector(psi[i])).trace()) * dt),
                     pdet = 1. - pj - p_d - p_c;
                 double z = rand01();
-                if (z < pj) // Jump
+                if (z < pj) {// Jump
                     psi[i] = jump(R, z);
-                if (z >= pj && z < p_c + pj) { // Create a copy
+                    jumped[i] = true;
+                }
+                else if (z >= pj && z < p_c + pj) { // Create a copy
                     psi[i] = (id - I*K*dt)*psi[i];
                     psi.push_back(psi[i]);
                     destroyed.push_back(false);
+                    jumped.push_back(jumped[i]);
                 }
                 else if (z >= p_c + pj && z < p_c + p_d + pj) // Destroy it
                     destroyed[i] = true;
-                else // Det evo
-                    psi[i] = (id - I*K*dt)*psi[i];
+                else if (!jumped[i]) // Not |+> or |->
+                    psi[i] = (id - I*K*dt)*psi[i]; // Det evo
                 psi[i] *= exp(-I*arg(psi[i][0]));
                 psi[i].normalize();
             }
