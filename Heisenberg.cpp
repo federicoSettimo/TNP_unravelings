@@ -14,25 +14,21 @@ using namespace std;
 using namespace Eigen;
 
 static complex<double> I(0,1), one(1,0), zero(0,0);
-static Eigen::Matrix2cd sigma_x {{1.,0.},{0.,-1.}};
-static Eigen::Matrix2cd sigma_z {{0.,1.},{1.,0.}};
-static Eigen::Matrix2cd sigma_p {{1.,-1.},{1.,-1.}};
-static Eigen::Matrix2cd sigma_m {{1.,1.},{-1.,-1.}};
-static Eigen::Matrix2cd id {{1,0},{0,1}};
+static Matrix2cd sigma_x {{1.,0.},{0.,-1.}}, sigma_y {{0,-I},{I,0}}, sigma_z {{0.,1.},{1.,0.}}, sigma_p {{1.,-1.},{1.,-1.}}, sigma_m {{1.,1.},{-1.,-1.}}, id {{1,0},{0,1}};
 
-static Eigen::Vector2cd plus_state {{1.,0.}};
-static Eigen::Vector2cd minus_state {{0.,1.}};
+static Vector2cd plus_state {{1.,0.}}, minus_state {{0.,1.}};
 
 // Parameters
-double dt = .005, tmax = 2., threshold_neg = 1e-1;
-int Nensemble = 10000, Ntraj = 7;
+double dt = .001, tmax = 2., threshold_neg = 1e-1;
+int Nensemble = 20000, Ntraj = 7;
 
 Matrix2cd comm (const Matrix2cd &A, const Matrix2cd &B) {return A*B-B*A;}
 Matrix2cd anticomm (const Matrix2cd &A, const Matrix2cd &B) {return A*B+B*A;}
 Matrix2cd projector (const Vector2cd &psi) {return psi*psi.adjoint();}
 
 double eps (double t) {
-    return 1. + .5*cos(2.*t);
+    //return 1. + .5*cos(2.*t);
+    return 4.*(1. + .5*cos(2.*t));
 }
 
 Matrix2cd H (double t) {
@@ -40,11 +36,13 @@ Matrix2cd H (double t) {
 }
 
 double gamma_p (double t) {
-    return .5*(1. + .8*cos(t));
+    //return .5*(1. + .8*cos(t));
+    return .1*(1. + .8*cos(t));
 }
 
 double gamma_m (double t) {
-    return .5*(1. - .8*cos(t));
+    //return .5*(1. - .8*cos(t));
+    return .1*(1. - .8*cos(t));
 }
 
 Matrix2cd J (const Matrix2cd &rho, double t) {
@@ -92,7 +90,7 @@ Vector2cd jump (const Matrix2cd &R, double z) {
 }
 
 int main () {
-    srand(time(NULL));
+    srand(42);
 
     Vector2cd psi0 = (plus_state + .3*minus_state).normalized();
     Matrix2cd rho = projector(psi0);
@@ -113,7 +111,7 @@ int main () {
         int Nt = 0;
         double gp = gamma_p(t), gm = gamma_m(t);
 
-        cout << t << ", " << psi.size() << endl;
+        //cout << t << ", " << psi.size() << endl;
 
         for (int i = 0; i < psi.size(); ++i) {
             if (i < Ntraj) {
