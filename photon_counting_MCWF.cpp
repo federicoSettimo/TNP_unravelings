@@ -20,8 +20,8 @@ MatrixXcd anticomm (const MatrixXcd &A, const MatrixXcd &B) {return A*B+B*A;}
 MatrixXcd projector (const VectorXcd &psi) {return psi*psi.adjoint();}
 
 // Parameters
-int dim_max = 10, Nensemble = 1000, Nsmooth = 20, Nensemble_tr = 10000;
-double gamma = 1., Omega = 1., phi = .2, nbar = .5, dt = .001, tmax = 1., dz = 0.01;
+double gamma = 1., Omega = 1., phi = .2, nbar = .5, dt = .01, tmax = 1., dz = 0.01;
+int dim_max = 10, Nensemble = 10000, Nsmooth = (int)tmax/dt/50;
 
 MatrixXd a () {
     MatrixXd aa = MatrixXd::Zero(dim_max, dim_max);
@@ -89,30 +89,37 @@ int main () {
     out_tmax.close();
 
     // Getting the exact solution + derivatives
+    cout << "Unraveling the trace and getting the exact solutions...\n";
     int i = 0;
+    cout << "\tz = " << zs[i] << "\n";
     unravel_tr(psi0, zs[i], i);
     rho0_ex = evolve_ex(psi0, zs[i], i); ++i;
+    cout << "\tz = " << zs[i] << "\n";
     unravel_tr(psi0, zs[i], i);
     rho1_ex = evolve_ex(psi0, zs[i], i); ++i;
+    cout << "\tz = " << zs[i] << "\n";
     unravel_tr(psi0, zs[i], i);
     rho2_ex = evolve_ex(psi0, zs[i], i); ++i;
+    cout << "\tz = " << zs[i] << "\n";
     unravel_tr(psi0, zs[i], i);
     rho3_ex = evolve_ex(psi0, zs[i], i); ++i;
+    cout << "\tz = " << zs[i] << "\n";
     unravel_tr(psi0, zs[i], i);
     rho4_ex = evolve_ex(psi0, zs[i], i);
 
-    vector<MatrixXcd> rho0, rho1, rho2, rho3;
+    vector<MatrixXcd> rho0, rho1, rho2, rho3, rho4;
     // Compute the moments etc...
-    cout << "Unraveling rho0...\n";
+    cout << "\nUnraveling the moments...\n";
+    cout << "\tUnraveling tau_0...\n";
     rho0 = smooth(unravel(psi0, 0, rho0));
-    cout << "Unraveling rho1...\n";
+    cout << "\tUnraveling tau_1...\n";
     rho1 = smooth(unravel(psi0, 1, rho0));
-    cout << "Unraveling rho2...\n";
-    //rho2 = unravel(psi0, 2, rho1);
+    cout << "\tUnraveling tau_2...\n";
     rho2 = smooth(unravel(psi0, 2, rho1));
-    cout << "Unraveling rho3...\n";
-    //rho3 = unravel(psi0, 3, rho2);
+    cout << "\tUnraveling tau_3...\n";
     rho3 = smooth(unravel(psi0, 3, rho2));
+    cout << "\tUnraveling tau_4...\n";
+    rho4 = smooth(unravel(psi0, 4, rho3));
 
 
     for (int i = 0; i < rho0.size(); ++i) {
@@ -121,103 +128,16 @@ int main () {
             + (rho1_ex[i] - 2.*rho2_ex[i] + rho3_ex[i])/(dz*dz)
             + (rho2_ex[i] - 2.*rho3_ex[i] + rho4_ex[i])/(dz*dz))/3.;
         double m3_ex = -(rho0_ex[i]-2*rho1_ex[i]+2*rho3_ex[i]-rho4_ex[i])/(2.*dz*dz*dz);
-        out_mom_ex << m1_ex << " " << m2_ex << " " << m3_ex << endl;
+        double m4_ex = (rho0_ex[i]-4*rho1_ex[i]+6*rho2_ex[i]-4*rho3_ex[i]+rho4_ex[i])/(dz*dz*dz*dz);
+
+        out_mom_ex << m1_ex << " " << m2_ex << " " << m3_ex << " " << m4_ex << endl;
         out_mom << real(rho1[i].trace()) << " "
             << real(rho2[i].trace()) << " "
-            << real(rho3[i].trace()) << endl;
+            << real(rho3[i].trace()) << " "
+            << real(rho4[i].trace()) << endl;
     }
 
     return 0;
-}
-
-vector<MatrixXcd> unravel (const VectorXcd &psi0, int k, const vector<MatrixXcd> &rhoKm1) {
-    vector<VectorXcd> psi;
-    vector<bool> destroyed, isZero;
-    for (int i = 0; i < Nensemble; ++i) {
-        psi.push_back(psi0);
-        destroyed.push_back(false);
-        isZero.push_back(k>=1); // If k >= 1, the initial condition is actually a zero vector 
-    }
-
-    vector<MatrixXcd> m;
-    int it = 0;
-    for (double t = 0.; t < tmax; t += dt) {
-        MatrixXcd K = H -.5*I*Gamma(t),
-            rho_avg = MatrixXcd::Zero(dim_max, dim_max),
-            At = MatrixXcd::Zero(dim_max, dim_max),
-            GammaL = Gamma(t);
-        if (k > 0)
-            At = k * J_extra(rhoKm1[it], t);
-        GammaL += At;
-        
-        // Getting the eigendecomposition of A for the extra jumps
-        ComplexEigenSolver<MatrixXcd> eigs;
-        eigs.compute(At);
-        VectorXcd eigval = eigs.eigenvalues();
-        MatrixXcd eigvec = eigs.eigenvectors();
-
-        for (int i = 0; i < psi.size(); ++i) {
-            if (!destroyed[i]) { // If destroyed do nothing
-
-                // If it's zero: easy, just create copies
-                if (isZero[i]) {
-                    double z = rand01();
-                    bool stop = false;
-                    for (int j = 0; j < dim_max && !stop; ++j) {
-                        double ll = real(eigval(j)) * dt;
-                        if (z < ll) {
-                            stop = true;
-                            isZero[i] = false;
-                            psi[i] = eigvec.col(j);
-                        }
-                        z -= ll;
-                    }
-                }
-                else {
-                    rho_avg += projector(psi[i])/(double)Nensemble;
-                    // Compute all probabilities
-                    double pj_m = gamma*(nbar + 1.)*(a()*psi[i]).squaredNorm()*dt,
-                        pj_p = gamma*nbar*(adag()*psi[i]).squaredNorm()*dt,
-                        pj = pj_m + pj_p,
-                        p_d = max(0, real(((Gamma(t) - GammaL)*projector(psi[i])).trace()) * dt),
-                        p_c = max(0, -real(((Gamma(t) - GammaL)*projector(psi[i])).trace()) * dt);
-                    double z = rand01();
-                    if (z < pj) {// Jump
-                        if (z < pj_m) psi[i] = a()*psi[i];
-                        else psi[i] = adag()*psi[i];
-                    }
-                    else if (z < p_c + pj) { // Create a copy
-                        psi[i] = (id - I*K*dt)*psi[i];
-                        psi.push_back(psi[i]);
-                        destroyed.push_back(false);
-                        isZero.push_back(false);
-                    }
-                    else if (z < p_c + p_d + pj) // Destroy it
-                        destroyed[i] = true;
-                    else if (z <= real(At.trace()) * dt + p_c + p_d + pj) {
-                        // Extra jumps of the inhomogeneous
-                        bool stop = false;
-                        z -= pj + p_c + p_d;
-                        for (int j = 0; j < dim_max && !stop; ++j) {
-                            double ll = real(eigval(j)) * dt;
-                            if (z < ll) {
-                                stop = true;
-                                psi[i] = eigvec.col(j);
-                            }
-                            z -= ll;
-                        }
-                    }
-                    else // Det evo
-                        psi[i] = (id - I*K*dt)*psi[i];
-                    psi[i].normalize();
-                }
-            }
-        }
-        m.push_back(rho_avg);
-
-        it++;
-    }
-    return m;
 }
 
 vector<double> evolve_ex (const VectorXcd &psi0, const double z, int index) {
@@ -251,10 +171,82 @@ vector<MatrixXcd> smooth (const vector<MatrixXcd> &rho) {
     return rho_smooth;
 }
 
+vector<MatrixXcd> unravel (const VectorXcd &psi0, int k, const vector<MatrixXcd> &rhoKm1) {
+    vector<VectorXcd> psi;
+    vector<bool> isZero;
+    for (int i = 0; i < Nensemble; ++i) {
+        psi.push_back(psi0);
+        isZero.push_back(k>=1); // If k >= 1, the initial condition is actually a zero vector 
+    }
+
+    vector<MatrixXcd> m;
+    int it = 0;
+    for (double t = 0.; t < tmax; t += dt) {
+        MatrixXcd K = H -.5*I*Gamma(t),
+            rho_avg = MatrixXcd::Zero(dim_max, dim_max),
+            At = MatrixXcd::Zero(dim_max, dim_max);
+        if (k > 0)
+            At = k * J_extra(rhoKm1[it], t);
+        
+        // Getting the eigendecomposition of A for the extra jumps
+        ComplexEigenSolver<MatrixXcd> eigs;
+        eigs.compute(At);
+        VectorXcd eigval = eigs.eigenvalues();
+        MatrixXcd eigvec = eigs.eigenvectors();
+
+        for (int i = 0; i < psi.size(); ++i) {
+            double z = rand01();
+            // If it's zero: easy, just create copies
+            if (isZero[i]) {
+                bool stop = false;
+                for (int j = 0; j < dim_max && !stop; ++j) {
+                    double ll = real(eigval(j)) * dt;
+                    if (z < ll) {
+                        stop = true;
+                        isZero[i] = false;
+                        psi[i] = eigvec.col(j).normalized();
+                    }
+                    z -= ll;
+                }
+            }
+            else {
+                rho_avg += projector(psi[i])/(double)Nensemble;
+                double pj_m = gamma*(nbar + 1.)*(a()*psi[i]).squaredNorm()*dt,
+                        pj_p = gamma*nbar*(adag()*psi[i]).squaredNorm()*dt,
+                        p_copy = real(At.trace()) * dt;
+                if (z < p_copy) {
+                    if (i < Nensemble) { // Is it right? Maybe
+                        for (int j = 0; j < dim_max; ++j) {
+                            double ll = real(eigval(j)) * dt;
+                            if (z < ll) {
+                                psi.push_back(eigvec.col(j).normalized());
+                                isZero.push_back(false);
+                                break;
+                            }
+                            z -= ll;
+                        }
+                    }
+                }
+                else if (z < p_copy + pj_m) // Jump minus
+                    psi[i] = a()*psi[i];
+                
+                else if (z < p_copy + pj_m + pj_p) // Jump plus
+                    psi[i] = adag()*psi[i];
+                else
+                    psi[i] = (id - I*K*dt)*psi[i];
+                psi[i].normalize();
+            }
+        }
+        m.push_back(rho_avg);
+        it++;
+    }
+    return m;
+}
+
 void unravel_tr (const VectorXcd &psi0, const double z, int index) {
     vector<VectorXcd> psi;
     vector<bool> destroyed;
-    for (int i = 0; i < Nensemble_tr; ++i) {
+    for (int i = 0; i < Nensemble; ++i) {
         psi.push_back(psi0);
         destroyed.push_back(false);
     }
@@ -269,7 +261,7 @@ void unravel_tr (const VectorXcd &psi0, const double z, int index) {
         for (int i = 0; i < psi.size(); ++i) {
             // If destroyed do nothing
             if (!destroyed[i]) {
-                rho_avg += projector(psi[i])/(double)Nensemble_tr;
+                rho_avg += projector(psi[i])/(double)Nensemble;
 
                 // Compute all probabilities
                 double pj_m = gamma*(nbar + 1.)*(1. + z)*(a()*psi[i]).squaredNorm()*dt,
